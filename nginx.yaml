@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Pod
+metadata:
+ name: fresco-nginx-pod
+
+spec:
+  containers:
+  - name: fresco-nginx-container
+  image: nginx
+  env:
+  - name: SERVER_URL_ENV
+    valueFrom:
+      configMapKeyRef:
+        name: fresco-config
+        key: SERVER_URL
+    volumeMounts:
+    - name: fresco-secret
+      mountPath: "/etc/test"
+    - name: fresco-pvc
+      mountPath: "/usr/share/nginx/html"
+  volumes:
+  - name: fresco-secret
+    secret:
+      secretName: fresco-secret
+  - name: fresco-pvc
+    persistentVolumeClaim:
+      claimName: fresco-pvc
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: fresco-pv
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 100M
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/tmp/fresco"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fresco-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50M
