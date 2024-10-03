@@ -1,0 +1,177 @@
+kubectl create configmap fresco-config --from-literal=SERVER_URL=https://
+www.fresco.me
+
+kubectl create secret generic literal-token --from-literal user=admin --from-literal
+pass=pass
+
+apiVersion: v1
+kind: Pod
+metadata:
+ name: fresco-nginx-pod
+
+spec:
+containers:
+- name: fresco-nginx-container
+image: nginx
+env:
+- name: SERVER_URL_ENV
+valueFrom:
+configMapKeyRef:
+name: fresco-config
+key: SERVER_URL
+volumeMounts:
+- name: fresco-secret
+mountPath: "/etc/test"
+- name: fresco-pvc
+mountPath: "/usr/share/nginx/html"
+volumes:
+- name: fresco-secret
+secret:
+secretName: fresco-secret
+- name: fresco-pvc
+persistentVolumeClaim:
+claimName: fresco-pvc
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+name: fresco-pv
+spec:
+storageClassName: manual
+capacity:
+storage: 100M
+accessModes:
+- ReadWriteOnce
+hostPath:
+path: "/tmp/fresco"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+name: fresco-pvc
+spec:
+accessModes:
+- ReadWriteOnce
+resources:
+requests:
+storage: 50M
+
+### Pod YAML Configuration
+
+This configuration defines a Pod with persistent storage:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fresco-pod
+  namespace: dev # Specify the namespace here
+spec:
+  volumes:
+    - name: test-pv-storage
+      persistentVolumeClaim:
+        claimName: fresco-pvc
+  containers:
+    - name: test-pv-container
+      image: nginx
+      ports:
+        - containerPort: 80
+          name: nginx-server
+      volumeMounts:
+        - mountPath: /usr/share/nginx/html
+          name: test-pv-storage
+```
+
+### Commands to Set Up the Environment
+
+Make sure to execute the following commands in the correct order:
+
+1. **Start Minikube** (if not already running):
+    ```bash
+    minikube start --extra-config=apiserver.Authorization.Mode=RBAC
+    ```
+
+2. **Create the Namespace**:
+    ```bash
+    kubectl create namespace dev
+    ```
+
+3. **Generate SSL Certificates**:
+    ```bash
+    openssl genrsa -out emp.key 2048
+    openssl req -new -key emp.key -out emp.csr -subj "/CN=emp/O=dev"
+    openssl x509 -req -in emp.csr -CA ~/.minikube/ca.crt -CAkey ~/.minikube/ca.key -CAcreateserial -out emp.crt -days 500
+    ```
+
+4. **Set Up Kubernetes Context**:
+    ```bash
+    kubectl config set-context dev-ctx --cluster=minikube --namespace=dev --user=emp
+    kubectl config set-credentials emp --client-certificate=./emp.crt --client-key=./emp.key
+    ```
+
+5. **Run a Temporary Nginx Pod**:
+    This command uses the updated method for running a pod:
+    ```bash
+    kubectl run nginx --image=nginx --namespace=dev
+    ```
+
+### RBAC Configuration
+
+Corrected Role and RoleBinding configurations:
+
+1. **Role Definition**:
+    ```yaml
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      namespace: dev
+      name: emp-role
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "deployments"]
+        verbs: ["get", "create", "update", "delete"]
+    ```
+
+2. **RoleBinding Definition**:
+    ```yaml
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: emp-bind
+      namespace: dev
+    subjects:
+      - kind: User
+        name: emp
+        apiGroup: ""
+    roleRef:
+      kind: Role
+      name: emp-role
+      apiGroup: rbac.authorization.k8s.io
+    ```
+
+3. **ClusterRoleBinding (if necessary)**:
+    If you need cluster-wide access, you can create a ClusterRoleBinding as shown below:
+    ```bash
+    kubectl create clusterrolebinding myname-cluster-admin-binding \
+      --clusterrole=cluster-admin \
+      --user=emp
+    ```
+
+### Key Changes & Improvements:
+
+- Specified the namespace directly in the Pod configuration.
+- Updated the RBAC version from `v1beta1` to `v1`, which is the stable version for Kubernetes.
+- Added `create`, `update`, and `delete` verbs to the role to provide broader permissions if necessary. Adjust as per your requirement.
+- Corrected indentation and formatting issues.
+- Used the correct syntax for `kubectl run`, omitting deprecated generator flags.
+
+### Applying the Configuration
+
+To apply the YAML configuration for roles and role bindings, save the Role and RoleBinding definitions into YAML files (e.g., `role.yaml` and `rolebinding.yaml`) and apply them using:
+
+```bash
+kubectl apply -f role.yaml
+kubectl apply -f rolebinding.yaml
+```
+
+This will set up the environment correctly with the necessary permissions.
